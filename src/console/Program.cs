@@ -9,155 +9,37 @@ using System.Text;
 
 namespace console
 {
-    class JsonProperty
+    class InputOptions
     {
-        public string Path { get; set; }
-        public string Name { get; set; }
-        public IJsonType Value { get; set; }
-        public int KeySize => Name.Length + 2;
-        public int ValueSizeOnDisk => Value.SizeOnDisk;
-        public int ValueSize => Value.ValueSize;
-        public int SizeOnDisk => ValueSizeOnDisk + KeySize + 1;
-    }
+        public bool TraceEnabled { get; set; }
 
-    interface IJsonType
-    {
-        JsonTypeEnum Type { get; }
+        public long MinValueSize { get; set; }
 
-        string Path { get; set; }
+        public long MaxValueSize { get; set; }
 
-        int MaxKeySize { get; }
-        int MaxValueSize { get; }
-        int MaxValueSizeOnDisk { get; }
-        int MinKeySize { get; }
-        int MinValueSize { get; }
-        int MinValueSizeOnDisk { get; }
-        int SchemaSize { get; }
-        int SizeOnDisk { get; }
-        int ValueSize { get; }
-        int ValueSizeOnDisk { get; }
-    }
+        public long Depth { get; set; }
 
-    class JsonType : IJsonType
-    {
-        public JsonType(IReadOnlyCollection<JsonProperty> properties)
-        {
-            Properties = properties;
-        }
-        
-        public IReadOnlyCollection<JsonProperty> Properties { get; }
-
-        public int ValueSize => Properties.Sum(v => v.ValueSize);
-
-        public int ValueSizeOnDisk => Properties.Sum(v => v.ValueSizeOnDisk);
-
-        public int SizeOnDisk => Properties.Sum(p => p.SizeOnDisk) + 2 + (Properties.Count == 0 ? 0 : Properties.Count - 1);
-
-        public int SchemaSize => Properties.Sum(p => p.KeySize) + 2 + (Properties.Count == 0 ? 0 : Properties.Count - 1);
-
-        public int MaxKeySize => Properties.Max(p => p.KeySize);
-
-        public int MinKeySize => Properties.Min(p => p.KeySize);
-
-        public int MaxValueSizeOnDisk => Properties.Max(p => p.ValueSizeOnDisk);
-
-        public int MinValueSizeOnDisk => Properties.Min(p => p.ValueSizeOnDisk);
-
-        public int MaxValueSize => Properties.Max(p => p.ValueSize);
-
-        public int MinValueSize => Properties.Min(p => p.ValueSize);
-
-        public JsonTypeEnum Type => JsonTypeEnum.Complex;
-
-        public string Path { get; set; }
-
-        public static JsonType Empty(string path) => new JsonType(Array.Empty<JsonProperty>()) { Path = path };
-    }
-
-    class JsonArray : IJsonType
-    {
-        public JsonArray(IReadOnlyCollection<IJsonType> values)
-        {
-            Values = values;
-        }
-
-        public IReadOnlyCollection<IJsonType> Values { get; }
-
-        public int MaxKeySize => Values.Max(v => v.MaxKeySize);
-
-        public int MaxValueSize => Values.Max(v => v.MaxValueSize);
-
-        public int MaxValueSizeOnDisk => Values.Max(v => v.MaxValueSizeOnDisk);
-
-        public int MinKeySize => Values.Min(v => v.MinKeySize);
-
-        public int MinValueSize => Values.Min(v => v.MinValueSize);
-
-        public int MinValueSizeOnDisk => Values.Min(v => v.MinValueSizeOnDisk);
-
-        public int SchemaSize => Values.Sum(v => v.SchemaSize) + 2 + (Values.Count == 0 ? 0 : Values.Count - 1);
-
-        public int SizeOnDisk => Values.Sum(v => v.SizeOnDisk) + 2 + (Values.Count == 0 ? 0 : Values.Count - 1);
-
-        public int ValueSize => Values.Sum(v => v.ValueSize);
-
-        public int ValueSizeOnDisk => Values.Sum(v => v.ValueSizeOnDisk);
-
-        public JsonTypeEnum Type => JsonTypeEnum.Array;
-
-        public string Path { get; set; }
-
-        public static JsonArray Empty(string path) => new JsonArray(Array.Empty<IJsonType>()) { Path = path };
-    }
-
-    enum JsonTypeEnum
-    {
-        Null,
-        Complex,
-        Array,
-        Integer,
-        String,
-        Decimal,
-        Boolean
-    }
-
-    class JsonWellKnownType : IJsonType
-    {
-        public int MaxKeySize => 0;
-
-        public int MaxValueSize => ValueSize;
-
-        public int MaxValueSizeOnDisk => ValueSizeOnDisk;
-
-        public int MinKeySize => 0;
-
-        public int MinValueSize => ValueSize;
-
-        public int MinValueSizeOnDisk => ValueSizeOnDisk;
-
-        public int SchemaSize => 0;
-
-        public int SizeOnDisk => ValueSizeOnDisk;
-
-        public int ValueSize { get; set; }
-
-        public int ValueSizeOnDisk { get; set; }
-
-        public JsonTypeEnum Type { get; private set; }
-
-        public string Path { get; set; }
-
-        public static JsonWellKnownType True(string path) => new JsonWellKnownType { ValueSize = 1, ValueSizeOnDisk = 4, Type = JsonTypeEnum.Boolean, Path = path };
-        public static JsonWellKnownType False(string path) => new JsonWellKnownType { ValueSize = 1, ValueSizeOnDisk = 5, Type = JsonTypeEnum.Boolean, Path = path };
-        public static JsonWellKnownType Null(string path) => new JsonWellKnownType { ValueSize = 0, ValueSizeOnDisk = 4, Type = JsonTypeEnum.Null, Path = path };
+        public string File { get; set; }
     }
 
     class Program
     {
         static void Main(string[] args)
         {
+            InputOptions options;
+
+            try
+            {
+                options = ReadOptions(args);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return;
+            }
+
             var sw = Stopwatch.StartNew();
-            var jsonContent = File.ReadAllText("manifest.json", Encoding.UTF8);
+            var jsonContent = File.ReadAllText(options.File, Encoding.UTF8);
             sw.Stop();
 
             Console.WriteLine($"File read elapsed time {sw.ElapsedMilliseconds}ms");
@@ -185,19 +67,21 @@ namespace console
             sw.Stop();
             totalMemory2 = GC.GetTotalMemory(true);
 
-            Console.WriteLine($"Json NON Formated parsing elapsed time {sw.ElapsedMilliseconds}ms");
-            Console.WriteLine($"Json NON Formated token tree size {ReadableBytes(totalMemory2 - totalMemory1)} bytes");
-            Console.WriteLine($"Json NON Formated content is {Percentage(bytes, totalMemory2 - totalMemory1)}% of the json token tree size");
+            Console.WriteLine($"Json NON Formatted parsing elapsed time {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"Json NON Formatted token tree size {ReadableBytes(totalMemory2 - totalMemory1)} bytes");
+            Console.WriteLine($"Json NON Formatted content is {Percentage(bytes, totalMemory2 - totalMemory1)}% of the json token tree size");
 
             var s = ReadSchema(jt);
 
             Console.WriteLine();
             Console.WriteLine($"Json memory size {ReadableBytes(s.ValueSize)} this is {Percentage(s.ValueSize, totalMemory2 - totalMemory1)}% of json token tree size and {Percentage(s.ValueSize, notFormatedBytes)}% of json non formated content");
 
-            var maxDepth = 5;
-            Console.WriteLine();
-            Console.WriteLine($"Tracing json schema with max depth {maxDepth}");
-            ShowSchemDetails(s, maxDepth);
+            if (options.TraceEnabled)
+            {
+                Console.WriteLine();
+                Console.WriteLine($"Tracing json schema with max depth {options.Depth}");
+                ShowSchemDetails(s, null, options);
+            }
 
             Console.ReadKey();
         }
@@ -258,17 +142,20 @@ namespace console
             return l;
         }
 
-        static void ShowSchemDetails(IJsonType schema, int maxDepth = 5, int tabs = 0)
+        static void ShowSchemDetails(IJsonType schema, IJsonType rootSchema, InputOptions options, int tabs = 0)
         {
-            if (tabs >= maxDepth) return;
+            if (tabs >= options.Depth) return;
+            var valueSize = schema.ValueSize;
+            if (valueSize <= options.MinValueSize || valueSize >= options.MaxValueSize) return;
+            var valueSizePercentage = Percentage(valueSize, rootSchema?.ValueSize ?? valueSize);
 
-            Console.WriteLine($"{Tabs(tabs)}{schema.Path}-[schema:{ReadableBytes(schema.SchemaSize)}, value:{ReadableBytes(schema.ValueSize)}]");
+            Console.WriteLine($"{Tabs(tabs)}{schema.Path}-[schema:{ReadableBytes(schema.SchemaSize)}, value:{ReadableBytes(valueSize)}, value:{valueSizePercentage}%]");
             if (schema is JsonArray)
             {
                 var array = schema as JsonArray;
                 foreach (var v in array.Values)
                 {
-                    ShowSchemDetails(v, maxDepth, tabs + 1);
+                    ShowSchemDetails(v, schema, options, tabs + 1);
                 }
             }
             else if (schema is JsonType)
@@ -276,7 +163,7 @@ namespace console
                 var type = schema as JsonType;
                 foreach (var p in type.Properties)
                 {
-                    ShowSchemDetails(p.Value, maxDepth, tabs + 1);
+                    ShowSchemDetails(p.Value, schema, options, tabs + 1);
                 }
             }
         }
@@ -285,7 +172,7 @@ namespace console
         
         static decimal Percentage(long a, long b) => (a * 100) / b;
 
-        static String ReadableBytes(long byteCount)
+        static string ReadableBytes(long byteCount)
         {
             var sizes = new [] { "B", "KB", "MB", "GB", "TB", "PB", "EB" };
             if (byteCount == 0) return "0" + sizes[0];
@@ -293,6 +180,40 @@ namespace console
             var place = Convert.ToInt32(Math.Floor(Math.Log(bytes, 1024)));
             var num = Math.Round(bytes / Math.Pow(1024, place), 1);
             return (Math.Sign(byteCount) * num).ToString() + sizes[place];
+        }
+
+        public static InputOptions ReadOptions(string[] args)
+        {
+            var file = GetValue("--file=", null);
+
+            if (string.IsNullOrEmpty(file))
+            {
+                throw new Exception("The file path is required, please provide it via `--file=` parameter.");
+            }
+
+            bool.TryParse(GetValue("--trace=", bool.TrueString), out bool traceEnabled);
+
+            return new InputOptions
+            {
+                File = file,
+                TraceEnabled = traceEnabled,
+                Depth = long.Parse(GetValue("--depth=", "5")),
+                MinValueSize = long.Parse(GetValue("--min-value-size=", "0")),
+                MaxValueSize = long.Parse(GetValue("--max-value-size=", long.MaxValue.ToString())),
+            };
+
+            string GetValue(string key, string defaultValue)
+            {
+                foreach (var arg in args)
+                {
+                    if (arg.StartsWith(key))
+                    {
+                        return arg.Remove(0, key.Length);
+                    }
+                }
+
+                return defaultValue;
+            }
         }
     }
 }
